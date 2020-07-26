@@ -1,6 +1,6 @@
 "use strict";
 
-var videoId = "";
+
 var recentRecievedMessage = 0;
 
 window.WebSocket = window.WebSocket || window.MozWebSocket;
@@ -12,8 +12,19 @@ if (!window.WebSocket) {
     $('span').hide();
 }
 
+var player;
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+        events: {
+            'onStateChange': onPlayerStateChange
+        }
+    });
+}
+
 var HOST = location.origin.replace(/^http/, 'ws');
 var ws = new WebSocket(HOST);
+
+
 ws.onerror = function (error) {
     content.html($('<p>', {
         text: 'Sorry, but there\'s some problem with your '
@@ -23,9 +34,14 @@ ws.onerror = function (error) {
 
 ws.onmessage = function (message) {
     recentRecievedMessage = Date.now();
+
     try {
         var json = JSON.parse(message.data);
-        if (json.event === 'play'){
+        if (json.event === 'join') {
+            var videoId = json.videoId;
+            player.loadVideoById({videoId: videoId});
+        }
+        else if (json.event === 'play'){
             player.seekTo(json.time, true);
             player.playVideo();
         }
@@ -37,25 +53,16 @@ ws.onmessage = function (message) {
     }
 };
 
-function broadcast(msg){
-    if (!msg) {
-        return;
-    }
-    ws.send(msg);
-}
-
-var player;
-var urlParams = new URLSearchParams(window.location.search);
-videoId = urlParams.get('v');
-
-function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-        videoId: videoId,
-        events: {
-            'onStateChange': onPlayerStateChange
-        }
-    });
-}
+// var player;
+// var videoId = "";
+// function onYouTubeIframeAPIReady() {
+//     player = new YT.Player('player', {
+//         videoId: videoId,
+//         events: {
+//             'onStateChange': onPlayerStateChange
+//         }
+//     });
+// }
 
 function onPlayerStateChange(event) {
     if (Date.now() - recentRecievedMessage < 1000){
@@ -64,18 +71,35 @@ function onPlayerStateChange(event) {
     if (event.data === YT.PlayerState.PLAYING) {
         var obj = {
             time: player.getCurrentTime(),
-            event: "play"
+            event: "play",
+            room: room
         };
-        broadcast(JSON.stringify(obj));
+        ws.send(JSON.stringify(obj));
     }
     else if (event.data === YT.PlayerState.PAUSED){
         var obj = {
-            event: "pause"
+            event: "pause",
+            room: room
         };
-        broadcast(JSON.stringify(obj));
+        ws.send(JSON.stringify(obj));
     }
 }
 
 function stopVideo() {
     player.stopVideo();
+}
+
+function join(room, videoUrl){
+    var videoId;
+    if (videoUrl) {
+        const url = new URL(videoUrl);
+        videoId = url.searchParams.get('v');
+    }
+    ws.send(JSON.stringify({join:room, videoId: videoId}));
+}
+var room;
+function bjoin(){
+    room = document.getElementById("room").value;
+    let video = document.getElementById("video").value;
+    join(room, video);
 }
